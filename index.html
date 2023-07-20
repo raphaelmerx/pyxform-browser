@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+  <head>
+      <script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
+  </head>
+  <body>
+    <h2>XLSForm to XForm converter</h2>
+    <p>
+        Runs entirely in the browser through WebAssembly, thanks to <a href="https://pyodide.org/en/stable/">Pyodide</a>.
+    </p>
+    <input type="file" id="xlsFile" accept=".xls,.xlsx">
+    <button id="convertButton">Convert to XForm</button>
+    <a id="downloadButton" style="display: none;">Download XML</a>
+    <pre id="xformOutput"></pre>
+    <script type="text/javascript">
+      async function main(){
+        let pyodide = await loadPyodide();
+        await pyodide.loadPackage("micropip");
+        const micropip = pyodide.pyimport("micropip");
+        await micropip.install('pyxform');
+
+        const convertButton = document.getElementById('convertButton');
+        const downloadButton = document.getElementById('downloadButton');
+        
+        convertButton.addEventListener('click', async () => {
+            const fileInput = document.getElementById('xlsFile');
+            if (fileInput.files.length === 0) {
+                alert("No file selected.");
+                return;
+            }
+
+            convertButton.disabled = true;
+            
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                pyodide.FS.writeFile("/input.xlsx", data);
+                
+                pyodide.runPython(`
+                    from pyxform.xls2xform import xls2xform_convert
+                    xls2xform_convert('/input.xlsx', '/output.xml', validate=False)
+                `);
+                
+                const xform = pyodide.FS.readFile("/output.xml", { encoding: "utf8" });
+                document.getElementById('xformOutput').textContent = xform;
+                
+                // Create a blob from the XForm string and create an object URL for that blob
+                const blob = new Blob([xform], {type : 'text/xml'});
+                const objectURL = URL.createObjectURL(blob);
+                console.log(objectURL)
+                
+                // Attach the object URL to the download button and make it visible
+                downloadButton.href = objectURL;
+                downloadButton.download = 'form.xml';
+                downloadButton.style.display = 'block';
+
+                convertButton.disabled = false;
+            }
+            reader.readAsArrayBuffer(file);
+        });
+      }
+      main();
+    </script>
+  </body>
+</html>
